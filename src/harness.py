@@ -7,6 +7,7 @@ The harness does the jobs the model cannot:
   4. stops after MAX_TURNS
   5. checks the final answer format, asks once for a fix, else says "unsure"
   6. writes every step to a decision log
+  7. applies the final decision rule (answer or "not sure") outside the model
 
 It knows nothing about insurance except the prompt and the tool list, so IncidentPilot can reuse it.
 """
@@ -33,6 +34,7 @@ Rules:
 3. Base your answer only on the past cases you found. If they disagree or do not match, say you are unsure.
 4. Finish with ONLY a JSON object, no other text:
 {"prediction": "overturned" or "upheld" or "unsure", "confidence": "high" or "medium" or "low", "reasons": "one or two plain sentences", "case_ids": [ids of the past cases you used]}
+5. The system makes the final decision. Your job is to find the evidence and explain it in plain words.
 """
 
 TOOLS = [{
@@ -130,13 +132,13 @@ def unsure(status, reason):
     return {"prediction": "unsure", "confidence": "low", "reasons": reason, "case_ids": [], "status": status}
 
 
-def run_agent(case, searcher, model_fn=call_model):
-    """Run the agent on one case dict (needs case_id, diagnosis, treatment, request)."""
+def _agent_loop(case, searcher, model_fn, estimate):
+    """The model loop: search, then explain. Returns an answer dict (status ok) or an unsure dict."""
     cid = case["case_id"]
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Treatment area: {case['treatment']}\nDiagnosis area: {case['diagnosis']}\n"
-                                    f"Request: {case['request']}"},
+                                    f"Request: {case['request']}" + estimate_line(estimate)},
     ]
     log("start", cid)
     searched = False
@@ -174,3 +176,49 @@ def run_agent(case, searcher, model_fn=call_model):
         return unsure("bad_format", "The model did not give a usable answer.")
     log("turn_limit", cid)
     return unsure("turn_limit", "Stopped after the maximum number of steps.")
+
+
+def estimate_line(estimate):
+    if estimate is None:
+        return ""
+    pred, conf, p = estimate
+    if pred == "unsure":
+        return "\nOutcome estimator: not sure about this one."
+    return f"\nOutcome estimator: leans {pred} (confidence {conf:.2f})."
+
+
+def apply_policy(answer, estimate):
+    """The decision rule. It lives here, outside the model, so text inside a request cannot change it."""
+    pred, conf, p = estimate
+    out = dict(answer)
+    out["estimator"] = {"prediction": pred, "confidence": round(conf, 3), "p_overturned": round(p, 3)}
+    model_ok = answer.get("status") == "ok"
+    out["model_notes"] = answer.get("reasons", "") if model_ok else ""
+    if pred == "unsure":
+        out.update(prediction="unsure", confidence="low", status="needs_human",
+                   reasons="The evidence is too mixed to call this one, so it goes to a human reviewer.")
+        return out
+    out["overridden"] = bool(model_ok and answer.get("prediction") != pred)
+    out["prediction"] = pred
+    out["confidence"] = "high" if conf >= 0.6 else "medium"
+    if model_ok:
+        out["status"] = "ok"
+        if out["overridden"]:
+            out["reasons"] = ("The system's estimate and the model's reading disagreed, so the system's estimate was used. "
+                              "Model's note: " + answer.get("reasons", ""))
+    else:
+        out["status"] = "estimator_only"
+        out["reasons"] = "The language model gave no usable explanation, so this is the estimator's call alone."
+    return out
+
+
+def run_agent(case, searcher, model_fn=call_model, estimator=None):
+    """Run the agent on one case dict (needs case_id, diagnosis, treatment, request)."""
+    estimate = estimator.estimate_one(case) if estimator is not None else None
+    answer = _agent_loop(case, searcher, model_fn, estimate)
+    if estimate is None:
+        return answer
+    result = apply_policy(answer, estimate)
+    log("policy", case["case_id"], estimator=result["estimator"], final=result["prediction"],
+        status=result["status"], overridden=result.get("overridden", False))
+    return result

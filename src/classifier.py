@@ -98,7 +98,10 @@ def main():
     print(f"\nWith the chosen threshold the system answers {s.mean():.0%} of test cases, "
           f"correct {acc:.1%} of those, and says 'not sure' on the rest.")
     os.makedirs("outputs", exist_ok=True)
+    import classifier as this_module  # so the saved file points at classifier.Estimator, not __main__
+    est.__class__ = this_module.Estimator
     with open(MODEL_FILE, "wb") as f:
+    
         pickle.dump(est, f)
     print(f"Saved to {MODEL_FILE}")
 
