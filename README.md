@@ -52,17 +52,17 @@ Status: in progress. Target finish Nov 20, 2026. Results below are early.
 
 Needs Python and Ollama with llama3.2:3b and nomic-embed-text pulled. Download the DMHC data into the data folder first.
 
+```
 
+python src\\prepare\_data.py
 
-&#x20;   python src\\prepare\_data.py
+python src\\classifier.py
 
-&#x20;   python src\\classifier.py
+python src\\run\_demo.py 5
 
-&#x20;   python src\\run\_demo.py 5
+python -m pytest
 
-&#x20;   python -m pytest
-
-
+```
 
 \## Files
 
