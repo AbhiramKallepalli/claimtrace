@@ -1,90 +1,69 @@
-\# ClaimTrace
-
-
+# ClaimTrace
 
 ClaimTrace estimates whether a California health insurance denial will be overturned or upheld on independent medical review. It reads a short request, finds similar past appeals, and gives an estimate. If the evidence is mixed, it says "not sure" and sends the case to a human reviewer instead of guessing.
 
-
-
 Everything runs locally with free tools (Ollama, Python). No paid services.
 
+Status: finished, apart from one item listed under "Not done". Final report is available from the author.
 
+## How it works
 
-Status: in progress. Target finish Nov 20, 2026. Results below are early.
+1. Data: public California DMHC Independent Medical Review cases (42,749 cases, about 22,957 usable after cleaning).
+2. Leakage fix: each case is split into the short request (the only thing the system sees) and the reviewer's reasoning (kept apart and used only as a library of other past cases). 1,500 cases are held out as a final test and are never used for searching or training.
+3. Search: keyword search (BM25) plus meaning search (nomic-embed-text embeddings), merged with reciprocal rank fusion.
+4. Estimator: TF-IDF plus logistic regression gives a probability. Confidence is abs(p - 0.5) * 2. The cutoff (0.4) is the lowest confidence that reaches 80 percent on a validation slice, not the test set.
+5. Harness: my own agent loop around a local model (Ollama). It handles tool calls, trims results, stops after a turn limit, checks the answer format, and writes a decision log.
+6. Decision rule: the system decides and the model only explains. Below the cutoff the case goes to a human. If the model disagrees with the estimator, the estimator wins. If the model fails, the estimator answers alone.
 
+## Results (1,500 held-out test cases)
 
+Always guessing the common answer: about 51 percent.
 
-\## How it works
+| Confidence cutoff | Share answered | Correct on those |
+| --- | --- | --- |
+| 0.0 | 100% | 68.1% |
+| 0.2 | 74% | 74.1% |
+| 0.3 | 61% | 77.5% |
+| 0.4 (chosen) | 49% | 81.4% |
+| 0.5 | 36% | 84.0% |
+| 0.6 | 26% | 88.1% |
 
+Model comparison on the same 40 random test cases (accuracy is the same because the estimator decides):
 
+| | Llama 3.2 3B | Qwen 2.5 7B |
+| --- | --- | --- |
+| Usable explanation | 19 of 23 | 23 of 23 |
+| Overridden by the estimator | 7 | 4 |
+| Time for 40 cases | 25 min | 76 min |
 
-1\. Data: public California DMHC Independent Medical Review cases (about 42,700 cases, about 23,000 usable after cleaning).
+Security: 20 hidden-instruction attack texts, each tried in the request, in a retrieved case, and against an "unsure" estimator. The decision never changed. Note that the model is faked in these tests, so they show the decision rule is safe, not that the real model ignores hidden instructions in its notes.
 
-2\. Leakage fix: each case is split into the short request (the only thing the system sees) and the reviewer's reasoning (kept apart and used only as a library of other past cases). 1,500 cases are held out as a final test and are never used for searching or training.
+96 automated tests pass.
 
-3\. Search: keyword search (BM25) plus meaning search (nomic-embed-text embeddings), merged with reciprocal rank fusion.
+## Run it
 
-4\. Estimator: TF-IDF plus logistic regression gives a probability. The confidence cutoff is chosen on a validation set, not the test set.
-
-5\. Harness: my own agent loop around a local model (Llama 3.2 3B through Ollama). It handles the tool calls, trims results, stops after a turn limit, checks the answer format, and writes a decision log.
-
-6\. Decision rule: the system decides and the model only explains. Below the confidence cutoff the case goes to a human.
-
-
-
-\## Early results
-
-
-
-\- Always guessing the common answer: about 51 percent.
-
-\- Estimator on the 1,500 held-out cases: about 68 percent.
-
-\- When confident, it answers about half of the cases and is right about 81 percent of those. The rest go to a human.
-
-\- 15 automated tests pass.
-
-
-
-\## Run it
-
-
-
-Needs Python and Ollama with llama3.2:3b and nomic-embed-text pulled. Download the DMHC data into the data folder first.
+Needs Python and Ollama with llama3.2:3b, qwen2.5:7b and nomic-embed-text pulled. Download the DMHC data into the data folder first. Start Ollama before running anything that uses a model.
 
 ```
-
-python src\\prepare\_data.py
-
-python src\\classifier.py
-
-python src\\run\_demo.py 5
-
+python src\prepare_data.py
+python src\classifier.py
+python src\run_demo.py 5
+python src\compare_models.py llama3.2:3b 40
+python src\compare_models.py qwen2.5:7b 40
 python -m pytest
-
 ```
 
-\## Files
+## Files
 
+- src/prepare_data.py: cleaning, request/reasoning split, held-out test set
+- src/search.py: hybrid case search
+- src/classifier.py: estimator and confidence cutoff
+- src/harness.py: agent loop and decision rule
+- src/injection_filter.py: flags text that looks like a hidden instruction
+- src/run_demo.py: runs the agent on a few held-out cases
+- src/compare_models.py: compares local models on the same cases
+- tests/: automated tests, including tests/test_security.py
 
+## Not done
 
-\- src/prepare\_data.py: cleaning, request/reasoning split, held-out test set
-
-\- src/search.py: hybrid case search
-
-\- src/classifier.py: estimator and confidence cutoff
-
-\- src/harness.py: agent loop and decision rule
-
-\- src/run\_demo.py: runs the agent on held-out cases
-
-\- tests/: automated tests
-
-
-
-\## Next
-
-
-
-Compare the 3B model with a 7B model, add hidden-instruction security tests, add an insurance rules lookup, score the held-out cases, and write the final report.
-
+A rules lookup tool from the original plan was not built, because I could not verify a rules source. The proposal also listed LangGraph, MCP and reranking; I wrote my own harness instead and did not add those.
