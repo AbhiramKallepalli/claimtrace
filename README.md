@@ -43,7 +43,9 @@ Security: 20 hidden-instruction attack texts, each tried in the request, in a re
 
 ## Run it
 
-Needs Python and Ollama with llama3.2:3b, qwen2.5:7b and nomic-embed-text pulled. Download the DMHC data into the data folder first. Start Ollama before running anything that uses a model.
+Needs Python and Ollama with llama3.2:3b, qwen2.5:7b and nomic-embed-text pulled. Download the [DMHC Independent Medical Review data](https://data.chhs.ca.gov/dataset/independent-medical-review-imr-determinations-trend) and save it as data/imr_raw.csv first. Start Ollama before running anything that uses a model.
+
+Install the packages first: pip install -r requirements.txt
 
 ```
 python src\prepare_data.py
@@ -64,9 +66,7 @@ python -m pytest
 - src/injection_filter.py: flags text that looks like a hidden instruction
 - src/run_demo.py: runs the agent on a few held-out cases
 - src/compare_models.py: compares local models on the same cases
+- src/eval_agreement.py: checks whether the estimate is more accurate when similar past cases agree
+- src/eval_retrieval.py: checks how well the search alone predicts the outcome
 - tests/: automated tests, including tests/test_security.py
 - docs/: project specification and final report
-
-## Not done
-
-The rules lookup is small (six rules from two statutes) and uses simple keyword matching. In a short 3-case demo the model looked rules up but did not name them in its answers, and the 40-case model comparison was run before the lookup existed. The proposal also listed LangGraph, MCP, FastAPI, SQLite and reranking; I wrote my own harness instead and did not add those.

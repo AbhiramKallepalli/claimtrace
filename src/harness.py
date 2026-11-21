@@ -17,6 +17,7 @@ import time
 
 import requests
 
+from injection_filter import looks_like_injection
 from rules import lookup_rules
 
 OLLAMA_CHAT = "http://localhost:11434/api/chat"
@@ -167,7 +168,8 @@ def _agent_loop(case, searcher, model_fn, estimate):
         {"role": "user", "content": f"Treatment area: {case['treatment']}\nDiagnosis area: {case['diagnosis']}\n"
                                     f"Request: {case['request']}" + estimate_line(estimate)},
     ]
-    log("start", cid)
+    flags = looks_like_injection(f"{case['request']} {case['diagnosis']} {case['treatment']}")
+    log("start", cid, injection_flags=flags)
     searched = False
     repaired = False
     looked_up = []  # rule ids the model actually looked up, recorded by the harness
