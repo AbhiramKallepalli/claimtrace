@@ -10,17 +10,17 @@ Status: finished. The project specification and final report are in the docs fol
 
 1. Data: public California DMHC Independent Medical Review cases (42,749 cases, about 22,957 usable after cleaning).
 2. Leakage fix: each case is split into the short request (plus its diagnosis and treatment area, which is all the system sees for that case) and the reviewer's reasoning (kept apart and used only as a library of other past cases). 1,500 cases are held out as a final test and are never used for searching or training.
-3. Search: keyword search (BM25) plus meaning search (nomic-embed-text embeddings), merged with reciprocal rank fusion.
-4. Estimator: TF-IDF plus logistic regression gives a probability. Confidence is abs(p - 0.5) * 2. The cutoff (0.4) is the lowest confidence that reaches 80 percent on a validation slice, not the test set.
+3. Search: keyword search (BM25) plus semantic search (nomic-embed-text embeddings), merged with reciprocal rank fusion.
+4. Estimator: a TF-IDF plus logistic regression classifier gives a probability. Confidence is abs(p - 0.5) * 2. The confidence threshold (0.4) is the lowest confidence that reaches 80 percent on a validation set, not the test set.
 5. Rules lookup: a second tool the model can call. It holds six short rules from California Health and Safety Code sections 1374.33 and 1370.4, each with its section number and a link to the published law. If nothing matches, it returns nothing. The harness records which rules the model looked up.
 6. Harness: my own agent loop around a local model (Ollama). It handles tool calls, trims results, stops after a turn limit, checks the answer format, and writes a decision log.
-7. Decision rule: the system decides and the model only explains. Below the cutoff the case goes to a human. If the model disagrees with the estimator, the estimator wins. If the model fails, the estimator answers alone.
+7. Decision rule: the system decides and the model only explains. Below the threshold the case goes to a human. If the model disagrees with the estimator, the estimator wins. If the model fails, the estimator answers alone.
 
 ## Results (1,500 held-out test cases)
 
 Always guessing the common answer: about 51 percent.
 
-| Confidence cutoff | Share answered | Correct on those |
+| Confidence threshold | Share answered | Accuracy on those |
 | --- | --- | --- |
 | 0.0 | 100% | 68.1% |
 | 0.2 | 74% | 74.1% |
@@ -37,7 +37,7 @@ Model comparison on the same 40 random test cases (accuracy is the same because 
 | Overridden by the estimator | 7 | 4 |
 | Time for 40 cases | 25 min | 76 min |
 
-Security: 20 hidden-instruction attack texts, each tried in the request, in a retrieved case, and against an "unsure" estimator. The decision never changed. Note that the model is faked in these tests, so they show the decision rule is safe, not that the real model ignores hidden instructions in its notes.
+Security: 20 prompt injection attack texts, each tried in the request, in a retrieved case, and against an "unsure" estimator. The decision never changed. Note that the model is faked in these tests, so they show the decision rule is safe, not that the real model ignores hidden instructions in its notes.
 
 113 automated tests pass.
 
@@ -61,9 +61,9 @@ python -m pytest
 - src/prepare_data.py: cleaning, request/reasoning split, held-out test set
 - src/search.py: hybrid case search
 - src/rules.py: lookup over a few California review rules
-- src/classifier.py: estimator and confidence cutoff
+- src/classifier.py: estimator and confidence threshold
 - src/harness.py: agent loop and decision rule
-- src/injection_filter.py: flags text that looks like a hidden instruction
+- src/injection_filter.py: flags text that looks like a prompt injection
 - src/run_demo.py: runs the agent on a few held-out cases
 - src/compare_models.py: compares local models on the same cases
 - src/eval_agreement.py: checks whether the estimate is more accurate when similar past cases agree
